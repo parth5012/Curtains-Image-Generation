@@ -108,31 +108,18 @@ def generate():
 
     prompt = build_prompt(curtain_type, fabric, rod_type, color)
 
-    # Candidate model names — tried in order until one succeeds
-    IMAGE_GEN_MODELS = [
-        "gemini-2.0-flash-exp-image-generation",
-        "gemini-2.5-flash-image",
-        "gemini-2.0-flash-preview-image-generation",
-    ]
-
-    response = None
-    last_error = None
-    for model_name in IMAGE_GEN_MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[prompt, pil_image],
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"]
-                ),
-            )
-            break  # success
-        except Exception as e:
-            last_error = e
-            continue
-
-    if response is None:
-        return jsonify({"error": f"Gemini API error: {str(last_error)}"}), 500
+    # Call Gemini image generation
+    try:
+        response = client.models.generate_content(
+            # model="gemini-2.0-flash-exp-image-generation",
+            model="gemini-2.5-flash-image",
+            contents=[prompt, pil_image],
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"]
+            ),
+        )
+    except Exception as e:
+        return jsonify({"error": f"Gemini API error: {str(e)}"}), 500
 
     # Extract the generated image from the response
     generated_b64  = None
