@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CurtainViz – AI Curtain Visualizer</title>
+  <meta name="description" content="Upload a photo of your window and visualize stunning curtain designs using AI. Choose fabric, style, and rod type instantly." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🪟</span>
+        <span class="logo-text">Curtain<span class="logo-accent">Viz</span></span>
+      </div>
+      <p class="tagline">AI-powered curtain visualization for your home</p>
+    </div>
+  </header>
+
+  <!-- ── MAIN LAYOUT ── -->
+  <main class="app-layout">
+
+    <!-- LEFT SIDEBAR – Curtain Type + Fabric -->
+    <aside class="sidebar sidebar-left" id="sidebar-left">
+      <div class="sidebar-section">
+        <h2 class="sidebar-title">Curtain Style</h2>
+        <div class="option-grid" id="curtain-type-group" role="group" aria-label="Curtain type">
+          <button class="option-card active" data-group="curtain_type" data-value="Panel" id="ct-panel">
+            <span class="option-icon">🏠</span>
+            <span class="option-label">Panel</span>
+          </button>
+          <button class="option-card" data-group="curtain_type" data-value="Sheer" id="ct-sheer">
+            <span class="option-icon">🌫️</span>
+            <span class="option-label">Sheer</span>
+          </button>
+          <button class="option-card" data-group="curtain_type" data-value="Blackout" id="ct-blackout">
+            <span class="option-icon">🌑</span>
+            <span class="option-label">Blackout</span>
+          </button>
+          <button class="option-card" data-group="curtain_type" data-value="Roman Shade" id="ct-roman">
+            <span class="option-icon">🏛️</span>
+            <span class="option-label">Roman</span>
+          </button>
+          <button class="option-card" data-group="curtain_type" data-value="Roller" id="ct-roller">
+            <span class="option-icon">🔄</span>
+            <span class="option-label">Roller</span>
+          </button>
+          <button class="option-card" data-group="curtain_type" data-value="Café" id="ct-cafe">
+            <span class="option-icon">☕</span>
+            <span class="option-label">Café</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2 class="sidebar-title">Fabric</h2>
+        <div class="option-grid" id="fabric-group" role="group" aria-label="Fabric type">
+          <button class="option-card active" data-group="fabric" data-value="Linen" id="fab-linen">
+            <span class="option-icon">🌿</span>
+            <span class="option-label">Linen</span>
+          </button>
+          <button class="option-card" data-group="fabric" data-value="Velvet" id="fab-velvet">
+            <span class="option-icon">💜</span>
+            <span class="option-label">Velvet</span>
+          </button>
+          <button class="option-card" data-group="fabric" data-value="Silk" id="fab-silk">
+            <span class="option-icon">✨</span>
+            <span class="option-label">Silk</span>
+          </button>
+          <button class="option-card" data-group="fabric" data-value="Cotton" id="fab-cotton">
+            <span class="option-icon">🌸</span>
+            <span class="option-label">Cotton</span>
+          </button>
+          <button class="option-card" data-group="fabric" data-value="Polyester" id="fab-poly">
+            <span class="option-icon">🔬</span>
+            <span class="option-label">Polyester</span>
+          </button>
+          <button class="option-card" data-group="fabric" data-value="Jute" id="fab-jute">
+            <span class="option-icon">🪵</span>
+            <span class="option-label">Jute</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER CANVAS -->
+    <section class="canvas-area" id="canvas-area">
+
+      <!-- Upload Zone -->
+      <div class="upload-zone" id="upload-zone" tabindex="0" role="button" aria-label="Upload window photo">
+        <div class="upload-inner" id="upload-inner">
+          <div class="upload-icon">📷</div>
+          <h3 class="upload-heading">Upload Your Window Photo</h3>
+          <p class="upload-sub">Drag & drop or click to select an image</p>
+          <p class="upload-hint">Supports JPG, PNG, WEBP</p>
+          <input type="file" id="file-input" accept="image/jpg,image/jpeg,image/png,image/webp" hidden />
+        </div>
+
+        <!-- Preview (shown after upload) -->
+        <div class="preview-wrapper hidden" id="preview-wrapper">
+          <img id="preview-img" src="" alt="Your uploaded window photo" class="preview-img" />
+          <button class="change-btn" id="change-btn" title="Upload a different photo">↩ Change Photo</button>
+        </div>
+      </div>
+
+      <!-- Generate Button -->
+      <div class="generate-row">
+        <button class="generate-btn" id="generate-btn">
+          <span class="btn-icon">✨</span>
+          <span class="btn-text">Generate Visualization</span>
+        </button>
+      </div>
+
+      <!-- Result Area -->
+      <div class="result-area hidden" id="result-area">
+        <h3 class="result-heading">Your Curtain Preview</h3>
+        <div class="compare-grid">
+          <div class="compare-card">
+            <span class="compare-label">Before</span>
+            <img id="before-img" src="" alt="Original room" class="compare-img" />
+          </div>
+          <div class="compare-divider">→</div>
+          <div class="compare-card">
+            <span class="compare-label">After</span>
+            <img id="after-img" src="" alt="Room with curtains" class="compare-img" />
+          </div>
+        </div>
+        <button class="download-btn" id="download-btn">⬇ Download Result</button>
+      </div>
+
+      <!-- Loading overlay -->
+      <div class="loading-overlay hidden" id="loading-overlay">
+        <div class="loader-card">
+          <div class="spinner"></div>
+          <p class="loading-text">Designing your curtains with AI…</p>
+          <p class="loading-sub">This may take 15–30 seconds</p>
+        </div>
+      </div>
+
+      <!-- Error toast -->
+      <div class="toast hidden" id="error-toast">
+        <span class="toast-icon">⚠️</span>
+        <span class="toast-msg" id="toast-msg">Something went wrong.</span>
+        <button class="toast-close" id="toast-close">✕</button>
+      </div>
+    </section>
+
+    <!-- RIGHT SIDEBAR – Rod Type + Color -->
+    <aside class="sidebar sidebar-right" id="sidebar-right">
+      <div class="sidebar-section">
+        <h2 class="sidebar-title">Rod Type</h2>
+        <div class="option-grid" id="rod-group" role="group" aria-label="Rod type">
+          <button class="option-card active" data-group="rod_type" data-value="standard" id="rod-std">
+            <span class="option-icon">➖</span>
+            <span class="option-label">Standard</span>
+          </button>
+          <button class="option-card" data-group="rod_type" data-value="tension" id="rod-tension">
+            <span class="option-icon">🔧</span>
+            <span class="option-label">Tension</span>
+          </button>
+          <button class="option-card" data-group="rod_type" data-value="traverse" id="rod-traverse">
+            <span class="option-icon">🔀</span>
+            <span class="option-label">Traverse</span>
+          </button>
+          <button class="option-card" data-group="rod_type" data-value="café" id="rod-cafe">
+            <span class="option-icon">☕</span>
+            <span class="option-label">Café</span>
+          </button>
+          <button class="option-card" data-group="rod_type" data-value="bay window" id="rod-bay">
+            <span class="option-icon">🏚️</span>
+            <span class="option-label">Bay Window</span>
+          </button>
+          <button class="option-card" data-group="rod_type" data-value="double" id="rod-double">
+            <span class="option-icon">▬</span>
+            <span class="option-label">Double</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2 class="sidebar-title">Color</h2>
+        <div class="color-palette" id="color-group" role="group" aria-label="Curtain color">
+          <button class="color-swatch active" data-group="color" data-value="white" id="col-white" style="--sw:#f5f5f0" title="White" aria-label="White"></button>
+          <button class="color-swatch" data-group="color" data-value="cream" id="col-cream" style="--sw:#f5e6c8" title="Cream" aria-label="Cream"></button>
+          <button class="color-swatch" data-group="color" data-value="beige" id="col-beige" style="--sw:#c8b89a" title="Beige" aria-label="Beige"></button>
+          <button class="color-swatch" data-group="color" data-value="grey" id="col-grey" style="--sw:#8e8e93" title="Grey" aria-label="Grey"></button>
+          <button class="color-swatch" data-group="color" data-value="charcoal" id="col-char" style="--sw:#36383f" title="Charcoal" aria-label="Charcoal"></button>
+          <button class="color-swatch" data-group="color" data-value="navy blue" id="col-navy" style="--sw:#1b2a4a" title="Navy Blue" aria-label="Navy Blue"></button>
+          <button class="color-swatch" data-group="color" data-value="dusty rose" id="col-rose" style="--sw:#c8877a" title="Dusty Rose" aria-label="Dusty Rose"></button>
+          <button class="color-swatch" data-group="color" data-value="sage green" id="col-sage" style="--sw:#7a9e7e" title="Sage Green" aria-label="Sage Green"></button>
+          <button class="color-swatch" data-group="color" data-value="terracotta" id="col-terra" style="--sw:#c0603a" title="Terracotta" aria-label="Terracotta"></button>
+          <button class="color-swatch" data-group="color" data-value="gold" id="col-gold" style="--sw:#c9a84c" title="Gold" aria-label="Gold"></button>
+          <button class="color-swatch" data-group="color" data-value="emerald green" id="col-emer" style="--sw:#186b4a" title="Emerald" aria-label="Emerald"></button>
+          <button class="color-swatch" data-group="color" data-value="burgundy" id="col-burg" style="--sw:#7c273b" title="Burgundy" aria-label="Burgundy"></button>
+        </div>
+
+        <!-- Selected color label -->
+        <div class="color-selected-label">
+          Selected: <strong id="color-label-text">White</strong>
+        </div>
+      </div>
+
+      <!-- Summary panel -->
+      <div class="summary-panel" id="summary-panel">
+        <h3 class="summary-title">Your Selection</h3>
+        <ul class="summary-list">
+          <li><span class="sum-key">Style:</span> <span id="sum-curtain">Panel</span></li>
+          <li><span class="sum-key">Fabric:</span> <span id="sum-fabric">Linen</span></li>
+          <li><span class="sum-key">Rod:</span> <span id="sum-rod">Standard</span></li>
+          <li><span class="sum-key">Color:</span> <span id="sum-color">White</span></li>
+        </ul>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer class="site-footer">
+    <p>Powered by <strong>Google Gemini AI</strong> &nbsp;·&nbsp; CurtainViz &copy; 2024</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
