@@ -5,7 +5,8 @@ from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 import io
 
@@ -19,12 +20,13 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     raise RuntimeError("GOOGLE_API_KEY not found in environment. Check your .env file.")
 
-genai.configure(api_key=GOOGLE_API_KEY)
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
 UPLOAD_FOLDER = Path("static/uploads")
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
 
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -64,13 +66,11 @@ def upload():
     if not allowed_file(file.filename):
         return jsonify({"error": "Unsupported file type. Use PNG, JPG, or WEBP."}), 400
 
-    # Save with a unique name
     ext = file.filename.rsplit(".", 1)[1].lower()
     file_key = f"{uuid.uuid4().hex}.{ext}"
     save_path = UPLOAD_FOLDER / file_key
     file.save(str(save_path))
 
-    # Read back and encode for preview
     with open(save_path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode("utf-8")
 
@@ -87,11 +87,11 @@ def generate():
     """Call Gemini image generation and return the result image."""
     data = request.get_json(force=True)
 
-    file_key   = data.get("file_key", "")
-    curtain_type = data.get("curtain_type", "panel")
-    fabric     = data.get("fabric", "linen")
-    rod_type   = data.get("rod_type", "standard")
-    color      = data.get("color", "white")
+    file_key     = data.get("file_key", "")
+    curtain_type = data.get("curtain_type", "Panel")
+    fabric       = data.get("fabric", "Linen")
+    rod_type     = data.get("rod_type", "standard")
+    color        = data.get("color", "white")
 
     if not file_key:
         return jsonify({"error": "No uploaded image found. Please upload a photo first."}), 400
@@ -100,7 +100,7 @@ def generate():
     if not image_path.exists():
         return jsonify({"error": "Uploaded image not found on server. Please re-upload."}), 404
 
-    # Load image for Gemini
+    # Load image with PIL
     try:
         pil_image = Image.open(str(image_path)).convert("RGB")
     except Exception as e:
@@ -108,32 +108,50 @@ def generate():
 
     prompt = build_prompt(curtain_type, fabric, rod_type, color)
 
-    # Call Gemini
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash-preview-image-generation")
-        response = model.generate_content(
-            [prompt, pil_image],
-            generation_config=genai.GenerationConfig(
-                response_modalities=["IMAGE", "TEXT"]
+    # Candidate model names — tried in order until one succeeds
+    IMAGE_GEN_MODELS = [
+        "gemini-2.0-flash-exp-image-generation",
+        "gemini-2.5-flash-image",
+        "gemini-2.0-flash-preview-image-generation",
+    ]
+
+    response = None
+    last_error = None
+    for model_name in IMAGE_GEN_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[prompt, pil_image],
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"]
+                ),
             )
-        )
-    except Exception as e:
-        return jsonify({"error": f"Gemini API error: {str(e)}"}), 500
+            break  # success
+        except Exception as e:
+            last_error = e
+            continue
+
+    if response is None:
+        return jsonify({"error": f"Gemini API error: {str(last_error)}"}), 500
 
     # Extract the generated image from the response
-    generated_b64 = None
+    generated_b64  = None
     generated_mime = "image/png"
 
     for part in response.candidates[0].content.parts:
         if part.inline_data is not None:
-            generated_b64 = base64.b64encode(part.inline_data.data).decode("utf-8")
+            generated_b64  = base64.b64encode(part.inline_data.data).decode("utf-8")
             generated_mime = part.inline_data.mime_type
             break
 
     if not generated_b64:
-        # Fallback: Gemini returned text only
-        text_response = response.text if hasattr(response, "text") else "No image generated."
-        return jsonify({"error": f"Gemini did not return an image. Response: {text_response}"}), 500
+        text_response = ""
+        for part in response.candidates[0].content.parts:
+            if part.text:
+                text_response += part.text
+        return jsonify({
+            "error": f"Gemini did not return an image. Response: {text_response or 'No content.'}"
+        }), 500
 
     return jsonify({
         "image": f"data:{generated_mime};base64,{generated_b64}",
