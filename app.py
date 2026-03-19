@@ -3,24 +3,24 @@ import uuid
 import base64
 from pathlib import Path
 
+import fal_client
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 from PIL import Image
 import io
+import requests as http_requests
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "curtainviz-secret-2024")
 
-# ── Gemini setup ──────────────────────────────────────────────────────────────
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    raise RuntimeError("GOOGLE_API_KEY not found in environment. Check your .env file.")
+# ── fal.ai setup ───────────────────────────────────────────────────────────────
+FAL_KEY = os.getenv("FAL_KEY")
+if not FAL_KEY:
+    raise RuntimeError("FAL_KEY not found in environment. Check your .env file.")
 
-client = genai.Client(api_key=GOOGLE_API_KEY)
+os.environ["FAL_KEY"] = FAL_KEY  # fal_client reads from env
 
 UPLOAD_FOLDER = Path("static/uploads")
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
@@ -33,17 +33,25 @@ def allowed_file(filename: str) -> bool:
 
 
 def build_prompt(curtain_type: str, fabric: str, rod_type: str, color: str) -> str:
-    """Build a detailed Gemini prompt for the curtain visualization."""
+    """Build a detailed prompt for the curtain visualization."""
     return (
-        f"You are an expert interior designer and photo editor. "
-        f"The image provided shows a window or glass door area inside a room. "
-        f"Add realistic, high-quality {color} {fabric} {curtain_type} curtains to every window in the image. "
-        f"The curtains should be hung on a {rod_type} curtain rod at the top of the window frame. "
-        f"Make the curtains look natural, properly lit, and consistent with the room's lighting and style. "
-        f"Keep everything else in the image exactly the same — walls, furniture, floor, and decor. "
-        f"Output a photorealistic result that looks like a real photograph. "
-        f"Do not add any text, watermarks, or labels to the image."
+        f"Interior design photo edit: add realistic, high-quality {color} {fabric} {curtain_type} curtains "
+        f"to every window visible in the image. "
+        f"The curtains are hung on a {rod_type} curtain rod at the top of the window frame. "
+        f"The curtains look natural, properly lit, and consistent with the room's existing lighting and style. "
+        f"Keep everything else in the image exactly the same — walls, furniture, floor, decor, and ceiling. "
+        f"Photorealistic result, looks like a real interior photograph. "
+        f"No text, no watermarks, no labels."
     )
+
+
+def image_to_data_uri(image_path: Path) -> str:
+    """Convert a local image file to a base64 data URI for fal.ai."""
+    ext = image_path.suffix.lower().lstrip(".")
+    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+    with open(image_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:{mime};base64,{encoded}"
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -84,7 +92,7 @@ def upload():
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    """Call Gemini image generation and return the result image."""
+    """Call fal.ai FLUX image-to-image and return the result image."""
     data = request.get_json(force=True)
 
     file_key     = data.get("file_key", "")
@@ -100,45 +108,48 @@ def generate():
     if not image_path.exists():
         return jsonify({"error": "Uploaded image not found on server. Please re-upload."}), 404
 
-    # Load image with PIL
-    try:
-        pil_image = Image.open(str(image_path)).convert("RGB")
-    except Exception as e:
-        return jsonify({"error": f"Could not open image: {e}"}), 500
-
     prompt = build_prompt(curtain_type, fabric, rod_type, color)
 
-    # Call Gemini image generation
+    # Convert image to data URI so fal.ai can read it directly
     try:
-        response = client.models.generate_content(
-            # model="gemini-2.0-flash-exp-image-generation",
-            model="gemini-2.5-flash-image",
-            contents=[prompt, pil_image],
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"]
-            ),
+        image_data_uri = image_to_data_uri(image_path)
+    except Exception as e:
+        return jsonify({"error": f"Could not read image: {e}"}), 500
+
+    # Call fal.ai FLUX Dev image-to-image
+    try:
+        result = fal_client.subscribe(
+            "fal-ai/flux/dev/image-to-image",
+            arguments={
+                "image_url": image_data_uri,
+                "prompt": prompt,
+                "strength": 0.85,           # how much to change the image (0=none, 1=full)
+                "num_inference_steps": 40,
+                "guidance_scale": 3.5,
+                "num_images": 1,
+                "output_format": "jpeg",
+                "enable_safety_checker": False,
+            },
         )
     except Exception as e:
-        return jsonify({"error": f"Gemini API error: {str(e)}"}), 500
+        return jsonify({"error": f"fal.ai API error: {str(e)}"}), 500
 
-    # Extract the generated image from the response
-    generated_b64  = None
-    generated_mime = "image/png"
+    # Extract the generated image URL from the result
+    try:
+        generated_url = result["images"][0]["url"]
+    except (KeyError, IndexError, TypeError) as e:
+        return jsonify({"error": f"Unexpected fal.ai response format: {str(e)}"}), 500
 
-    for part in response.candidates[0].content.parts:
-        if part.inline_data is not None:
-            generated_b64  = base64.b64encode(part.inline_data.data).decode("utf-8")
-            generated_mime = part.inline_data.mime_type
-            break
-
-    if not generated_b64:
-        text_response = ""
-        for part in response.candidates[0].content.parts:
-            if part.text:
-                text_response += part.text
-        return jsonify({
-            "error": f"Gemini did not return an image. Response: {text_response or 'No content.'}"
-        }), 500
+    # Fetch the generated image and convert to base64 to return to frontend
+    try:
+        img_response = http_requests.get(generated_url, timeout=30)
+        img_response.raise_for_status()
+        img_bytes = img_response.content
+        generated_b64 = base64.b64encode(img_bytes).decode("utf-8")
+        generated_mime = img_response.headers.get("Content-Type", "image/jpeg")
+    except Exception as e:
+        # If we can't fetch, just return the URL directly
+        return jsonify({"image_url": generated_url})
 
     return jsonify({
         "image": f"data:{generated_mime};base64,{generated_b64}",
